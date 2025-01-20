@@ -2,8 +2,8 @@ use super::recv::RecvHeaderBlockError;
 use super::store::{self, Entry, Resolve, Store};
 use super::{Buffer, Config, Counts, Prioritized, Recv, Send, Stream, StreamId};
 use crate::codec::{Codec, SendError, UserError};
-use crate::ext::Protocol;
-use crate::frame::{self, Frame, Reason};
+use crate::ext::{Protocol, PseudoType};
+use crate::frame::{self, Frame, Priority, Reason, StreamDependency};
 use crate::proto::{peer, Error, Initiator, Open, Peer, WindowSize};
 use crate::{client, proto, server};
 
@@ -78,6 +78,15 @@ struct Inner {
 
     /// The number of stream refs to this shared state.
     refs: usize,
+
+    /// Pseudo order of the headers stream (Optional)
+    headers_frame_pseudo_order: Option<&'static [PseudoType; 4]>,
+
+    /// Priority of the headers stream (Optional)
+    headers_frame_priority: Option<StreamDependency>,
+
+    /// Priority frames for virtual streams (optional)
+    virtual_streams_priorities: Option<&'static [Priority]>,
 }
 
 #[derive(Debug)]
@@ -273,12 +282,19 @@ where
         }
 
         // Convert the message
-        let headers =
-            client::Peer::convert_send_message(stream_id, request, protocol, end_of_stream)?;
+        let headers = client::Peer::convert_send_message(
+            stream_id,
+            request,
+            protocol,
+            me.headers_frame_pseudo_order,
+            me.headers_frame_priority,
+            end_of_stream,
+        )?;
 
         let mut stream = me.store.insert(stream.id, stream);
 
-        let sent = me.actions.send.send_headers(
+        let sent = me.actions.send.send_priority_and_headers(
+            me.virtual_streams_priorities,
             headers,
             send_buffer,
             &mut stream,
@@ -411,6 +427,9 @@ impl Inner {
             },
             store: Store::new(),
             refs: 1,
+            headers_frame_pseudo_order: config.headers_frame_pseudo_order,
+            headers_frame_priority: config.headers_frame_priority,
+            virtual_streams_priorities: config.virtual_streams_priorities,
         }))
     }
 

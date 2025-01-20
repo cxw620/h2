@@ -220,6 +220,7 @@ impl Recv {
             return if counts.peer().is_server() && is_initial {
                 let mut res = frame::Headers::new(
                     stream.id,
+                    None,
                     frame::Pseudo::response(::http::StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE),
                     HeaderMap::new(),
                 );

@@ -1,5 +1,5 @@
 use super::{util, StreamDependency, StreamId};
-use crate::ext::Protocol;
+use crate::ext::{Protocol, PseudoType};
 use crate::frame::{Error, Frame, Head, Kind};
 use crate::hpack::{self, BytesStr};
 
@@ -70,6 +70,9 @@ pub struct Pseudo {
     pub path: Option<BytesStr>,
     pub protocol: Option<Protocol>,
 
+    // Request `Headers` frame pseudo order.
+    pub order: Option<&'static [PseudoType; 4]>,
+
     // Response
     pub status: Option<StatusCode>,
 }
@@ -114,17 +117,29 @@ const ALL: u8 = END_STREAM | END_HEADERS | PADDED | PRIORITY;
 
 impl Headers {
     /// Create a new HEADERS frame
-    pub fn new(stream_id: StreamId, pseudo: Pseudo, fields: HeaderMap) -> Self {
+    pub fn new(
+        stream_id: StreamId,
+        stream_dep: Option<StreamDependency>,
+        pseudo: Pseudo,
+        fields: HeaderMap,
+    ) -> Self {
+        // If the stream dependency is set, the PRIORITY flag must be set
+        let flags = if stream_dep.is_some() {
+            HeadersFlag(END_HEADERS | PRIORITY)
+        } else {
+            HeadersFlag::default()
+        };
+
         Headers {
             stream_id,
-            stream_dep: None,
+            stream_dep,
             header_block: HeaderBlock {
                 field_size: calculate_headermap_size(&fields),
                 fields,
                 is_over_size: false,
                 pseudo,
             },
-            flags: HeadersFlag::default(),
+            flags,
         }
     }
 
@@ -284,7 +299,12 @@ impl Headers {
 
         self.header_block
             .into_encoding(encoder)
-            .encode(&head, dst, |_| {})
+            .encode(&head, dst, |dst| {
+                if let Some(ref stream_dep) = self.stream_dep {
+                    // write 5 bytes for the stream dependency
+                    stream_dep.encode(dst);
+                }
+            })
     }
 
     fn head(&self) -> Head {
@@ -583,6 +603,7 @@ impl Pseudo {
             authority: None,
             path,
             protocol,
+            order: None,
             status: None,
         };
 
@@ -607,6 +628,7 @@ impl Pseudo {
             authority: None,
             path: None,
             protocol: None,
+            order: None,
             status: Some(status),
         }
     }
@@ -632,6 +654,10 @@ impl Pseudo {
 
     pub fn set_authority(&mut self, authority: BytesStr) {
         self.authority = Some(authority);
+    }
+
+    pub fn set_order(&mut self, order: Option<&'static [PseudoType; 4]>) {
+        self.order = order;
     }
 
     /// Whether it has status 1xx
@@ -702,20 +728,34 @@ impl Iterator for Iter {
         use crate::hpack::Header::*;
 
         if let Some(ref mut pseudo) = self.pseudo {
-            if let Some(method) = pseudo.method.take() {
-                return Some(Method(method));
-            }
-
-            if let Some(scheme) = pseudo.scheme.take() {
-                return Some(Scheme(scheme));
-            }
-
-            if let Some(authority) = pseudo.authority.take() {
-                return Some(Authority(authority));
-            }
-
-            if let Some(path) = pseudo.path.take() {
-                return Some(Path(path));
+            for pseudo_type in pseudo.order.unwrap_or(&[
+                PseudoType::Method,
+                PseudoType::Scheme,
+                PseudoType::Authority,
+                PseudoType::Path,
+            ]) {
+                match pseudo_type {
+                    PseudoType::Method => {
+                        if let Some(method) = pseudo.method.take() {
+                            return Some(Method(method));
+                        }
+                    }
+                    PseudoType::Scheme => {
+                        if let Some(scheme) = pseudo.scheme.take() {
+                            return Some(Scheme(scheme));
+                        }
+                    }
+                    PseudoType::Authority => {
+                        if let Some(authority) = pseudo.authority.take() {
+                            return Some(Authority(authority));
+                        }
+                    }
+                    PseudoType::Path => {
+                        if let Some(path) = pseudo.path.take() {
+                            return Some(Path(path));
+                        }
+                    }
+                }
             }
 
             if let Some(protocol) = pseudo.protocol.take() {
@@ -1004,6 +1044,7 @@ mod test {
 
         let headers = Headers::new(
             StreamId::ZERO,
+            None,
             Default::default(),
             HeaderMap::from_iter(vec![
                 (

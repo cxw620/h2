@@ -25,7 +25,8 @@ use self::state::State;
 use self::store::Store;
 use self::stream::Stream;
 
-use crate::frame::{StreamId, StreamIdOverflow};
+use crate::ext::PseudoType;
+use crate::frame::{Priority, StreamDependency, StreamId, StreamIdOverflow};
 use crate::proto::*;
 
 use bytes::Bytes;
@@ -72,4 +73,13 @@ pub struct Config {
     ///
     /// When this gets exceeded, we issue GOAWAYs.
     pub local_max_error_reset_streams: Option<usize>,
+
+    /// The `Headers` frame pseudo order.
+    pub headers_frame_pseudo_order: Option<&'static [PseudoType; 4]>,
+
+    /// The `Headers` frame priority setting.
+    pub headers_frame_priority: Option<StreamDependency>,
+
+    /// The `Priority` frames (settings) for virtual streams.
+    pub virtual_streams_priorities: Option<&'static [Priority]>,
 }

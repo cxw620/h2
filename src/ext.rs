@@ -53,3 +53,19 @@ impl fmt::Debug for Protocol {
         self.value.fmt(f)
     }
 }
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+/// Represents the pseudo-header type.
+pub enum PseudoType {
+    /// The `:method` pseudo-header.
+    Method,
+
+    /// The `:scheme` pseudo-header.
+    Scheme,
+
+    /// The `:authority` pseudo-header.
+    Authority,
+
+    /// The `:path` pseudo-header.
+    Path,
+}

@@ -1385,6 +1385,9 @@ where
                                 .builder
                                 .local_max_error_reset_streams,
                             settings: self.builder.settings.clone(),
+                            headers_frame_pseudo_order: None,
+                            headers_frame_priority: None,
+                            virtual_streams_priorities: None,
                         },
                     );
 
@@ -1435,7 +1438,7 @@ impl Peer {
         let pseudo = Pseudo::response(status);
 
         // Create the HEADERS frame
-        let mut frame = frame::Headers::new(id, pseudo, headers);
+        let mut frame = frame::Headers::new(id, None, pseudo, headers);
 
         if end_of_stream {
             frame.set_end_stream()

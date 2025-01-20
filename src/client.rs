@@ -136,8 +136,8 @@
 //! [`Error`]: ../struct.Error.html
 
 use crate::codec::{Codec, SendError, UserError};
-use crate::ext::Protocol;
-use crate::frame::{Headers, Pseudo, Reason, Settings, StreamId};
+use crate::ext::{Protocol, PseudoType};
+use crate::frame::{Headers, Priority, Pseudo, Reason, Settings, StreamDependency, StreamId};
 use crate::proto::{self, Error};
 use crate::{FlowControl, PingPong, RecvStream, SendStream};
 
@@ -333,6 +333,15 @@ pub struct Builder {
 
     /// Initial `Settings` frame to send as part of the handshake.
     settings: Settings,
+
+    /// The `Headers` frame pseudo order.
+    headers_frame_pseudo_order: Option<&'static [PseudoType; 4]>,
+
+    /// The `Headers` frame priority setting.
+    headers_frame_priority: Option<StreamDependency>,
+
+    /// The `Priority` frames (settings) for virtual streams.
+    virtual_streams_priorities: Option<&'static [Priority]>,
 
     /// The stream ID of the first (lowest) stream. Subsequent streams will use
     /// monotonically increasing stream IDs.
@@ -661,6 +670,9 @@ impl Builder {
             initial_target_connection_window_size: None,
             initial_max_send_streams: usize::MAX,
             settings: Default::default(),
+            headers_frame_pseudo_order: None,
+            headers_frame_priority: None,
+            virtual_streams_priorities: None,
             stream_id: 1.into(),
             local_max_error_reset_streams: Some(proto::DEFAULT_LOCAL_RESET_COUNT_MAX),
         }
@@ -1145,6 +1157,42 @@ impl Builder {
         self
     }
 
+    /// Sets the `Headers` frame pseudo order.
+    ///
+    /// This is mostly used when impersonating HTTP2 fingerprint.
+    ///
+    /// The default value is `None`, let `h2` decide.
+    pub fn headers_frame_pseudo_order(
+        &mut self,
+        order: Option<&'static [PseudoType; 4]>,
+    ) -> &mut Self {
+        self.headers_frame_pseudo_order = order;
+        self
+    }
+
+    /// Sets the `Headers` frame priority.
+    ///
+    /// This is mostly used when impersonating HTTP2 fingerprint.
+    ///
+    /// The default value is `None`, let `h2` decide.
+    pub fn headers_frame_priority(&mut self, priority: Option<StreamDependency>) -> &mut Self {
+        self.headers_frame_priority = priority;
+        self
+    }
+
+    /// Sets the `Priority` frames (settings) for virtual streams.
+    ///
+    /// This is mostly used when impersonating HTTP2 fingerprint and pairs with [`initial_stream_id`](Self::initial_stream_id).
+    ///
+    /// The default value is `None`.
+    pub fn virtual_streams_priorities(
+        &mut self,
+        priorities: Option<&'static [Priority]>,
+    ) -> &mut Self {
+        self.virtual_streams_priorities = priorities;
+        self
+    }
+
     /// Sets the first stream ID to something other than 1.
     #[cfg(feature = "unstable")]
     pub fn initial_stream_id(&mut self, stream_id: u32) -> &mut Self {
@@ -1335,6 +1383,9 @@ where
                 remote_reset_stream_max: builder.pending_accept_reset_stream_max,
                 local_error_reset_streams_max: builder.local_max_error_reset_streams,
                 settings: builder.settings.clone(),
+                headers_frame_pseudo_order: builder.headers_frame_pseudo_order,
+                headers_frame_priority: builder.headers_frame_priority,
+                virtual_streams_priorities: builder.virtual_streams_priorities,
             },
         );
         let send_request = SendRequest {
@@ -1583,6 +1634,8 @@ impl Peer {
         id: StreamId,
         request: Request<()>,
         protocol: Option<Protocol>,
+        headers_frame_pseudo_order: Option<&'static [PseudoType; 4]>,
+        headers_frame_priority: Option<StreamDependency>,
         end_of_stream: bool,
     ) -> Result<Headers, SendError> {
         use http::request::Parts;
@@ -1603,6 +1656,8 @@ impl Peer {
         // Build the set pseudo header set. All requests will include `method`
         // and `path`.
         let mut pseudo = Pseudo::request(method, uri, protocol);
+
+        pseudo.set_order(headers_frame_pseudo_order);
 
         if pseudo.scheme.is_none() {
             // If the scheme is not set, then there are a two options.
@@ -1633,7 +1688,7 @@ impl Peer {
         }
 
         // Create the HEADERS frame
-        let mut frame = Headers::new(id, pseudo, headers);
+        let mut frame = Headers::new(id, headers_frame_priority, pseudo, headers);
 
         if end_of_stream {
             frame.set_end_stream()
