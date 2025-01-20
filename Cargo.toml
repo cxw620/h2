@@ -1,5 +1,5 @@
 [package]
-name = "h2"
+name = "miku-h2"
 # When releasing to crates.io:
 # - Update CHANGELOG.md.
 # - Create git tag
@@ -10,8 +10,8 @@ authors = [
   "Sean McArthur <sean@seanmonstar.com>",
 ]
 description = "An HTTP/2 client and server"
-documentation = "https://docs.rs/h2"
-repository = "https://github.com/hyperium/h2"
+documentation = "https://docs.rs/miku-h2"
+repository = "https://github.com/cxw620/miku-h2"
 readme = "README.md"
 keywords = ["http", "async", "non-blocking"]
 categories = ["asynchronous", "web-programming", "network-programming"]

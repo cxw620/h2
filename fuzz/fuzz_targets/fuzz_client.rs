@@ -1,5 +1,5 @@
 #![no_main]
-use h2_support::prelude::*;
+use miku_h2_support::prelude::*;
 use libfuzzer_sys::{arbitrary::Arbitrary, fuzz_target};
 
 #[derive(Debug, Arbitrary)]

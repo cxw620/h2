@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use h2::{
+use miku_h2::{
     client,
     server::{self, SendResponse},
     RecvStream,

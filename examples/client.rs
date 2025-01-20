@@ -1,4 +1,4 @@
-use h2::client;
+use miku_h2::client;
 use http::{HeaderMap, Request};
 
 use std::error::Error;
